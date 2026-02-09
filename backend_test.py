@@ -140,13 +140,18 @@ class DataScrapingAPITester:
 
     def test_export_csv(self):
         """Test CSV export"""
-        success, response = self.run_test(
-            "Export CSV",
-            "GET",
-            "export/csv",
-            200
-        )
-        return success, response
+        url = f"{self.api_url}/export/csv"
+        try:
+            response = requests.get(url, timeout=30)
+            success = response.status_code == 200 and 'text/csv' in response.headers.get('content-type', '')
+            details = f"Status: {response.status_code}, Content-Type: {response.headers.get('content-type', 'unknown')}"
+            if success:
+                details += f", CSV Content Length: {len(response.text)} chars"
+            self.log_test("Export CSV", success, details)
+            return success, {}
+        except Exception as e:
+            self.log_test("Export CSV", False, f"Exception: {str(e)}")
+            return False, {}
 
     def test_export_json(self):
         """Test JSON export"""
