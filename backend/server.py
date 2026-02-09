@@ -106,7 +106,7 @@ def extract_phone_numbers(text: str) -> List[str]:
     return list(set(phones))
 
 async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
-    """Scrape startup India portal page using Playwright for JavaScript-rendered content"""
+    """Scrape startup India portal page using Playwright with XPath selectors"""
     try:
         async with async_playwright() as p:
             # Launch browser in headless mode
@@ -126,230 +126,139 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                 'Accept-Language': 'en-US,en;q=0.5'
             })
             
-            # Navigate to the URL with domcontentloaded
+            # Navigate to the URL
             logger.info(f"Navigating to URL: {url}")
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
             
-            # Wait for content to load - significantly increase delay to ensure JavaScript renders content
+            # Wait for content to load - give enough time for JavaScript to render
             logger.info("Waiting for content to load...")
-            await asyncio.sleep(12)  # 12 second delay to ensure JavaScript fully renders content
+            await asyncio.sleep(12)
             
-            # Try to wait for any content to appear (look for common startup page elements)
+            # Try to wait for main content area
             try:
-                # Wait for any of these possible selectors
-                await page.wait_for_selector('[class*="profile"], [class*="startup"], [class*="company"], main, article', timeout=5000)
+                await page.wait_for_selector('#txtEditor, [id*="1638164275868262"]', timeout=5000)
             except PlaywrightTimeoutError:
-                logger.warning("Timeout waiting for content selectors, continuing anyway...")
+                logger.warning("Timeout waiting for main content selectors, continuing anyway...")
             
-            # Get the fully rendered HTML
-            html_content = await page.content()
+            data = {}
             
-            # Save HTML for debugging (first 10000 chars)
-            logger.info(f"Page HTML (first 10000 chars): {html_content[:10000]}")
+            # XPath configuration for field extraction
+            xpaths = {
+                'name': '//*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/p',
+                'website': '//*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[3]/a',
+                'email': '//*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[2]',
+                'contact_number': '//*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[1]',
+                'stage': '//*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[1]/span[2]',
+                'focus_industry': '//*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[2]/span[2]',
+                'focus_sector': '//*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[3]/span[2]',
+                'service_area': '//*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[4]/span[2]',
+                'location': '//*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[5]/span[2]',
+                'active_years': '//*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[6]/span[2]/p',
+                'engagement_level': '//*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/h6[1]/span/strong',
+                'about_company': '//*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[1]/div/div[1]'
+            }
+            
+            # Extract data using XPath selectors
+            for field, xpath in xpaths.items():
+                try:
+                    # Use Playwright's locator with xpath
+                    element = page.locator(f'xpath={xpath}').first
+                    
+                    # Check if element exists
+                    if await element.count() > 0:
+                        # Get text content or href for links
+                        if field == 'website':
+                            value = await element.get_attribute('href')
+                        else:
+                            value = await element.text_content()
+                        
+                        if value:
+                            value = value.strip()
+                            # Filter out invalid values
+                            if value and value not in ['×', '—', '-', 'N/A', '', 'XXXXXXX', '0000000000', 'NA']:
+                                data[field] = value
+                                logger.info(f"Extracted {field}: {value}")
+                except Exception as e:
+                    logger.warning(f"Could not extract {field} using XPath: {e}")
+            
+            # Special handling for mobile_number (same XPath as contact_number)
+            if data.get('contact_number'):
+                data['mobile_number'] = data['contact_number']
+            
+            # Special handling for active_on_portal (same XPath as engagement_level)
+            if data.get('engagement_level'):
+                data['active_on_portal'] = data['engagement_level']
+            
+            # Extract domain from website if website exists
+            if data.get('website'):
+                try:
+                    # Clean up website URL
+                    website_url = data['website']
+                    if not website_url.startswith('http'):
+                        website_url = 'https://' + website_url
+                    
+                    # Extract domain
+                    domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', website_url)
+                    if domain_match:
+                        data['domain'] = domain_match.group(1)
+                        data['website'] = website_url  # Store cleaned URL
+                except Exception as e:
+                    logger.warning(f"Error extracting domain: {e}")
+            
+            # Fallback: if XPath extraction failed for critical fields, try regex patterns on page text
+            if not data.get('name') or not data.get('email') or not data.get('website'):
+                logger.info("Some fields missing, attempting fallback extraction...")
+                html_content = await page.content()
+                soup = BeautifulSoup(html_content, 'html.parser')
+                all_text = soup.get_text()
+                
+                # Company name fallback
+                if not data.get('name'):
+                    company_patterns = [
+                        r'([A-Z][A-Z\s&]+(?:LLP|PRIVATE LIMITED|PVT\.? LTD\.?|LIMITED|LTD\.?))',
+                        r'Company Name:?\s*([A-Z][A-Za-z\s&]+(?:LLP|Pvt|Ltd|Limited))',
+                    ]
+                    for pattern in company_patterns:
+                        match = re.search(pattern, all_text)
+                        if match:
+                            potential_name = match.group(1).strip()
+                            if len(potential_name) > 5:
+                                data['name'] = potential_name
+                                logger.info(f"Extracted name via fallback: {potential_name}")
+                                break
+                
+                # Email fallback
+                if not data.get('email'):
+                    emails = extract_emails(all_text)
+                    if emails:
+                        valid_emails = [e for e in emails if not any(x in e.lower() for x in [
+                            'example', 'test', 'noreply', 'xxxx', 'xxx@', 
+                            '@startupindia', '@gov', '@facebook', '@twitter'
+                        ])]
+                        if valid_emails:
+                            data['email'] = valid_emails[0]
+                            logger.info(f"Extracted email via fallback: {valid_emails[0]}")
+                
+                # Website fallback
+                if not data.get('website'):
+                    website_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+\.com[^\s<>"]*'
+                    website_matches = re.findall(website_pattern, all_text)
+                    if website_matches:
+                        valid_websites = [w for w in website_matches if not any(x in w.lower() for x in [
+                            'startupindia', 'google', 'facebook', 'linkedin', 'twitter', '.js', '.css'
+                        ])]
+                        if valid_websites:
+                            data['website'] = valid_websites[0]
+                            logger.info(f"Extracted website via fallback: {valid_websites[0]}")
+                            # Extract domain
+                            domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', data['website'])
+                            if domain_match:
+                                data['domain'] = domain_match.group(1)
             
             # Close browser
             await browser.close()
             
-            # Parse with BeautifulSoup
-            soup = BeautifulSoup(html_content, 'html.parser')
-            data = {}
-            
-            # Extract all text for parsing
-            all_text = soup.get_text()
-            
-            # Log a snippet of the content for debugging
-            logger.info(f"Page content length: {len(html_content)} chars")
-            logger.info(f"First 2000 chars of text: {all_text[:2000]}")
-            
-            # Check if we're getting the subscription page or actual content
-            if "Thank you for subscribing" in all_text:
-                logger.warning("Detected 'Thank you for subscribing' page - content may not be fully available")
-            
-            # Use regex patterns to extract data from text
-            # Look for company name patterns (usually in all caps or proper case with LLP/Pvt/Ltd)
-            company_patterns = [
-                r'([A-Z][A-Z\s&]+(?:LLP|PRIVATE LIMITED|PVT\.? LTD\.?|LIMITED|LTD\.?))',
-                r'Company Name:?\s*([A-Z][A-Za-z\s&]+(?:LLP|Pvt|Ltd|Limited))',
-            ]
-            for pattern in company_patterns:
-                match = re.search(pattern, all_text)
-                if match:
-                    potential_name = match.group(1).strip()
-                    if len(potential_name) > 5:  # Reasonable company name length
-                        data['name'] = potential_name
-                        break
-            
-            # Extract website URLs (look for https/www patterns)
-            website_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+\.com[^\s<>"]*'
-            website_matches = re.findall(website_pattern, all_text)
-            if website_matches:
-                # Filter out common false positives
-                valid_websites = [w for w in website_matches if not any(x in w.lower() for x in ['startupindia', 'google', 'facebook', 'linkedin', 'twitter', '.js', '.css'])]
-                if valid_websites:
-                    data['website'] = valid_websites[0]
-                    # Extract domain
-                    domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', data['website'])
-                    if domain_match:
-                        data['domain'] = domain_match.group(1)
-            
-            # Extract emails from text
-            emails = extract_emails(all_text)
-            if emails:
-                # Filter out masked or placeholder emails and UI elements
-                valid_emails = [e for e in emails if not any(x in e.lower() for x in [
-                    'example', 'test', 'noreply', 'xxxx', 'xxx@', 
-                    '@startupindia', '@gov', '@facebook', '@twitter'
-                ])]
-                if valid_emails:
-                    data['email'] = valid_emails[0]
-            
-            # Extract phone numbers
-            phones = extract_phone_numbers(all_text)
-            if phones:
-                # Filter out obviously fake or masked numbers
-                valid_phones = [p for p in phones if (
-                    len(p) >= 10 and 
-                    not all(c in '0X' for c in p) and 
-                    p not in ['0000000000', '1111111111', '9999999999']
-                )]
-                if valid_phones:
-                    data['contact_number'] = valid_phones[0] if len(valid_phones) > 0 else None
-                    data['mobile_number'] = valid_phones[1] if len(valid_phones) > 1 else None
-            
-            # Try to find specific fields by looking for labels in text
-            # Location
-            location_patterns = [
-                r'Location:?\s*([A-Z][a-z]+(?:,\s*[A-Z][a-z]+)*)',
-                r'City:?\s*([A-Z][a-z]+)',
-                r'Address:?\s*([A-Za-z\s,]+)',
-            ]
-            for pattern in location_patterns:
-                match = re.search(pattern, all_text)
-                if match:
-                    data['location'] = match.group(1).strip()
-                    break
-            
-            # Stage
-            stage_patterns = [
-                r'Stage:?\s*([\w\s]+?)(?:\n|$|[A-Z][a-z]+:)',
-                r'Startup Stage:?\s*([\w\s]+?)(?:\n|$)',
-            ]
-            for pattern in stage_patterns:
-                match = re.search(pattern, all_text)
-                if match:
-                    stage_value = match.group(1).strip()
-                    if len(stage_value) < 50:  # Reasonable stage length
-                        data['stage'] = stage_value
-                        break
-            
-            # Industry/Sector
-            industry_patterns = [
-                r'Industry:?\s*([\w\s]+?)(?:\n|$|[A-Z][a-z]+:)',
-                r'Sector:?\s*([\w\s]+?)(?:\n|$|[A-Z][a-z]+:)',
-            ]
-            for pattern in industry_patterns:
-                match = re.search(pattern, all_text)
-                if match:
-                    industry_value = match.group(1).strip()
-                    if len(industry_value) < 100:
-                        if 'industry' in pattern.lower() and not data.get('focus_industry'):
-                            data['focus_industry'] = industry_value
-                        elif 'sector' in pattern.lower() and not data.get('focus_sector'):
-                            data['focus_sector'] = industry_value
-                        break
-            
-            # Try multiple strategies to find the company/startup name if not found by regex
-            if not data.get('name'):
-                name_elem = (
-                    soup.find('h1', class_=re.compile('name|title|heading|company', re.I)) or
-                    soup.find('h2', class_=re.compile('name|title|heading|company', re.I)) or
-                    soup.find('div', class_=re.compile('startup.*name|company.*name', re.I)) or
-                    soup.find('h1') or
-                    soup.find('h2')
-                )
-                if name_elem:
-                    name_text = name_elem.get_text(strip=True)
-                    # Filter out generic page titles
-                    if name_text and name_text not in ['Startup Details', 'Profile', 'Dashboard', 'Subscribe'] and len(name_text) > 3:
-                        data['name'] = name_text
-            
-            # Look for structured data in various formats (as fallback)
-            # Try definition lists
-            dts = soup.find_all('dt')
-            for dt in dts:
-                dt_text = dt.get_text(strip=True).lower()
-                dd = dt.find_next_sibling('dd')
-                if dd:
-                    value = dd.get_text(strip=True)
-                    if value and value not in ['×', '—', '-', 'N/A', 'XXXXXXX', '0000000000']:
-                        if 'website' in dt_text or 'url' in dt_text:
-                            if not data.get('website'):
-                                data['website'] = value
-                        elif 'email' in dt_text:
-                            if not data.get('email'):
-                                data['email'] = value
-                        elif 'mobile' in dt_text:
-                            if not data.get('mobile_number'):
-                                data['mobile_number'] = value
-                        elif 'phone' in dt_text or 'contact' in dt_text:
-                            if not data.get('contact_number'):
-                                data['contact_number'] = value
-                        elif 'stage' in dt_text:
-                            if not data.get('stage'):
-                                data['stage'] = value
-                        elif 'industry' in dt_text:
-                            if not data.get('focus_industry'):
-                                data['focus_industry'] = value
-                        elif 'sector' in dt_text:
-                            if not data.get('focus_sector'):
-                                data['focus_sector'] = value
-                        elif 'location' in dt_text or 'city' in dt_text or 'address' in dt_text:
-                            if not data.get('location'):
-                                data['location'] = value
-            
-            # Try label/value pairs (as fallback)
-            labels = soup.find_all(['label', 'span', 'div'], class_=re.compile('label|field.*label|key', re.I))
-            for label in labels:
-                label_text = label.get_text(strip=True).lower()
-                # Find value in various ways
-                value_elem = (
-                    label.find_next_sibling(['span', 'div', 'p']) or
-                    label.parent.find_next(['span', 'div', 'p'], class_=re.compile('value|data|info', re.I))
-                )
-                
-                if value_elem:
-                    value = value_elem.get_text(strip=True)
-                    # Better validation for values
-                    if value and value not in ['×', '—', '-', 'N/A', '', 'XXXXXXX', '0000000000']:
-                        # Additional validation: value should be reasonable
-                        if 'website' in label_text and not data.get('website'):
-                            if 'http' in value or 'www.' in value:
-                                data['website'] = value
-                        elif 'email' in label_text and not data.get('email'):
-                            if '@' in value and len(value) < 100:
-                                data['email'] = value
-                        elif 'mobile' in label_text and not data.get('mobile_number'):
-                            if value.replace('+', '').replace('-', '').replace(' ', '').isdigit():
-                                data['mobile_number'] = value
-                        elif ('phone' in label_text or 'contact' in label_text) and not data.get('contact_number'):
-                            if value.replace('+', '').replace('-', '').replace(' ', '').isdigit():
-                                data['contact_number'] = value
-                        elif 'stage' in label_text and not data.get('stage'):
-                            data['stage'] = value
-                        elif 'industry' in label_text and not data.get('focus_industry'):
-                            data['focus_industry'] = value
-                        elif 'sector' in label_text and not data.get('focus_sector'):
-                            data['focus_sector'] = value
-                        elif ('location' in label_text or 'city' in label_text) and not data.get('location'):
-                            data['location'] = value
-            
-            # Final cleanup - ensure domain is extracted if website is present
-            if data.get('website') and not data.get('domain'):
-                domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', data['website'])
-                if domain_match:
-                    data['domain'] = domain_match.group(1)
-            
-            logger.info(f"Extracted data: {data}")
+            logger.info(f"Final extracted data: {data}")
             return data
     except Exception as e:
         logger.error(f"Error scraping startup page: {e}", exc_info=True)
