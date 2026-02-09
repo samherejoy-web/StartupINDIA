@@ -105,7 +105,7 @@
 user_problem_statement: "Fix crawler functionality to extract accurate results from Startup India portal pages using specific XPath selectors, and ensure website crawling works correctly when websites are found."
 
 backend:
-  - task: "Implement XPath-based data extraction"
+  - task: "Implement XPath-based data extraction with BeautifulSoup fallback"
     implemented: true
     working: "needs_testing"
     file: "backend/server.py"
@@ -115,7 +115,22 @@ backend:
     status_history:
       - working: "needs_testing"
         agent: "main"
-        comment: "Replaced generic CSS selectors and regex patterns with specific XPath selectors for all fields (name, domain, website, email, contact_number, mobile_number, stage, focus_industry, focus_sector, service_area, location, active_years, engagement_level, active_on_portal, about_company). Added fallback mechanism for critical fields if XPath extraction fails."
+        comment: |
+          UPDATED: Added BeautifulSoup fallback mechanism after Playwright installation.
+          
+          Implementation includes:
+          1. Installed Playwright chromium browser (167.3 MB)
+          2. Created scrape_with_beautifulsoup() function as fallback
+          3. Modified scrape_startup_india_page() to try Playwright first, then BeautifulSoup if it fails
+          4. BeautifulSoup fallback uses CSS selectors to mimic XPath behavior
+          5. Both methods include regex fallback for critical fields
+          
+          Scraping Strategy:
+          - Primary: Playwright with XPath selectors (best for JavaScript-rendered content)
+          - Secondary: BeautifulSoup with CSS selectors (faster, works for static HTML)
+          - Tertiary: Regex pattern matching (catches edge cases)
+          
+          This ensures high reliability and data extraction success rate.
   
   - task: "Website crawling for additional details"
     implemented: true
