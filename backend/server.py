@@ -251,19 +251,20 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                             data['focus_sector'] = industry_value
                         break
             
-            # Try multiple strategies to find the company/startup name
-            name_elem = (
-                soup.find('h1', class_=re.compile('name|title|heading|company', re.I)) or
-                soup.find('h2', class_=re.compile('name|title|heading|company', re.I)) or
-                soup.find('div', class_=re.compile('startup.*name|company.*name', re.I)) or
-                soup.find('h1') or
-                soup.find('h2')
-            )
-            if name_elem:
-                name_text = name_elem.get_text(strip=True)
-                # Filter out generic page titles
-                if name_text and name_text not in ['Startup Details', 'Profile', 'Dashboard', 'Subscribe']:
-                    data['name'] = name_text
+            # Try multiple strategies to find the company/startup name if not found by regex
+            if not data.get('name'):
+                name_elem = (
+                    soup.find('h1', class_=re.compile('name|title|heading|company', re.I)) or
+                    soup.find('h2', class_=re.compile('name|title|heading|company', re.I)) or
+                    soup.find('div', class_=re.compile('startup.*name|company.*name', re.I)) or
+                    soup.find('h1') or
+                    soup.find('h2')
+                )
+                if name_elem:
+                    name_text = name_elem.get_text(strip=True)
+                    # Filter out generic page titles
+                    if name_text and name_text not in ['Startup Details', 'Profile', 'Dashboard', 'Subscribe'] and len(name_text) > 3:
+                        data['name'] = name_text
             
             # Look for structured data in various formats
             # Try definition lists
