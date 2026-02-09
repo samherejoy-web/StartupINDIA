@@ -112,6 +112,7 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             # Launch browser in headless mode
             browser = await p.chromium.launch(
                 headless=True,
+                executable_path='/pw-browsers/chromium-1208/chrome-linux64/chrome',
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
             )
             
