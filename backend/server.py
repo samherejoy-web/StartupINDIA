@@ -319,15 +319,21 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                 
                 if value_elem:
                     value = value_elem.get_text(strip=True)
+                    # Better validation for values
                     if value and value not in ['×', '—', '-', 'N/A', '', 'XXXXXXX', '0000000000']:
+                        # Additional validation: value should be reasonable
                         if 'website' in label_text and not data.get('website'):
-                            data['website'] = value
+                            if 'http' in value or 'www.' in value:
+                                data['website'] = value
                         elif 'email' in label_text and not data.get('email'):
-                            data['email'] = value
+                            if '@' in value and len(value) < 100:
+                                data['email'] = value
                         elif 'mobile' in label_text and not data.get('mobile_number'):
-                            data['mobile_number'] = value
+                            if value.replace('+', '').replace('-', '').replace(' ', '').isdigit():
+                                data['mobile_number'] = value
                         elif ('phone' in label_text or 'contact' in label_text) and not data.get('contact_number'):
-                            data['contact_number'] = value
+                            if value.replace('+', '').replace('-', '').replace(' ', '').isdigit():
+                                data['contact_number'] = value
                         elif 'stage' in label_text and not data.get('stage'):
                             data['stage'] = value
                         elif 'industry' in label_text and not data.get('focus_industry'):
