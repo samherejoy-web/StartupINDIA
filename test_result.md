@@ -174,81 +174,104 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: |
-      IMPLEMENTATION COMPLETE - XPath-based crawler fixes:
+      IMPLEMENTATION COMPLETE - XPath-based crawler with BeautifulSoup fallback:
       
       ## Changes Made:
       
-      1. **XPath-Based Data Extraction** (server.py lines 108-220):
-         - Implemented specific XPath selectors for all 15 fields:
-           * name: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/p
-           * website: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[3]/a
-           * email: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[2]
-           * contact_number: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[1]
-           * stage: //*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[1]/span[2]
-           * focus_industry: //*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[2]/span[2]
-           * focus_sector: //*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[3]/span[2]
-           * service_area: //*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[4]/span[2]
-           * location: //*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[5]/span[2]
-           * active_years: //*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[2]/div/div/div/div/span[6]/span[2]/p
-           * engagement_level: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/h6[1]/span/strong
-           * about_company: //*[@id="1638164275868262-0"]/div/div/div/div/div/div/div[1]/div/div[1]
+      1. **Playwright Browser Installation**:
+         - Installed chromium browser for Playwright (167.3 MB)
+         - Browser path: /pw-browsers/chromium-1208/chrome-linux64/chrome
+         - Ready for JavaScript-rendered content scraping
+      
+      2. **Three-Tier Scraping Strategy**:
          
-         - Used Playwright's locator API with xpath prefix for precise element selection
-         - Added proper error handling for each field extraction
-         - Implemented value filtering to exclude invalid entries (×, —, N/A, XXXXXXX, etc.)
-         - Special handling for duplicate XPaths (mobile_number, active_on_portal)
+         **Tier 1: Playwright with XPath** (Primary, lines 108-304)
+         - Uses specific XPath selectors for all 15 fields
+         - Best for JavaScript-rendered pages like Startup India portal
+         - Waits 12 seconds for content to render
+         - Includes error handling per field
+         
+         **Tier 2: BeautifulSoup Fallback** (Secondary, lines 89-107)
+         - Activates if Playwright fails (browser issues, timeouts, etc.)
+         - Uses CSS selectors to mimic XPath behavior
+         - Faster execution for static HTML
+         - Includes same field validation and filtering
+         
+         **Tier 3: Regex Fallback** (Tertiary, in both methods)
+         - Extracts critical fields (name, email, website) from raw text
+         - Catches edge cases where DOM structure differs
+         - Pattern matching for company names, emails, phone numbers
+      
+      3. **XPath Fields Implemented**:
+         ✓ name: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/p
+         ✓ website: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[3]/a
+         ✓ email: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[2]
+         ✓ contact_number: //*[@id="txtEditor"]/div[1]/div[2]/div[2]/div/div/div[2]/div[2]/span[1]
+         ✓ mobile_number: (same as contact_number)
+         ✓ stage: //*[@id="1638164275868262-0"]/.../span[1]/span[2]
+         ✓ focus_industry: //*[@id="1638164275868262-0"]/.../span[2]/span[2]
+         ✓ focus_sector: //*[@id="1638164275868262-0"]/.../span[3]/span[2]
+         ✓ service_area: //*[@id="1638164275868262-0"]/.../span[4]/span[2]
+         ✓ location: //*[@id="1638164275868262-0"]/.../span[5]/span[2]
+         ✓ active_years: //*[@id="1638164275868262-0"]/.../span[6]/span[2]/p
+         ✓ engagement_level: //*[@id="txtEditor"]/.../h6[1]/span/strong
+         ✓ active_on_portal: (same as engagement_level)
+         ✓ about_company: //*[@id="1638164275868262-0"]/.../div[1]/div/div[1]
+         ✓ domain: (auto-extracted from website URL)
+      
+      4. **Enhanced Features**:
          - Automatic domain extraction from website URLs
+         - Invalid value filtering (×, —, N/A, XXXXXXX, 0000000000)
+         - Comprehensive logging for debugging
+         - Website crawling when website URL is found
+         - Proper error handling at each extraction level
       
-      2. **Fallback Mechanism** (server.py lines 195-218):
-         - If XPath extraction fails for critical fields (name, email, website)
-         - Falls back to regex pattern matching on page text
-         - Ensures at least basic data is captured even if page structure changes
-      
-      3. **Enhanced Website Crawling** (server.py lines 358-405):
-         - Converted to async function using Playwright instead of requests
-         - Better JavaScript support for dynamic websites
-         - Extracts: about_company, email, contact numbers, location
-         - Proper error handling and timeout management
-         - Filters out invalid/fake contact information
-      
-      4. **Improved Main Scraping Flow** (server.py lines 407-442):
-         - Fixed async/await for website scraping
-         - Proper data merging (prefers Startup India data over website data)
-         - Enhanced logging for debugging
-         - Better error tracking and status reporting
+      5. **Website Crawling** (lines 306-357):
+         - Async Playwright-based website scraping
+         - Extracts: about_company, email, contact info, location
+         - 3-second wait for page rendering
+         - Filters out fake/placeholder data
       
       ## Testing Instructions:
       
-      Please test the following scenarios:
+      **Test Scenario 1: Single URL Scraping**
+      ```bash
+      curl -X POST http://localhost:8001/api/scrape \
+        -H "Content-Type: application/json" \
+        -d '{"url": "https://www.startupindia.gov.in/content/sih/en/startupgov/startup-profile/[STARTUP_ID].html"}'
+      ```
       
-      1. **Single URL Scraping**:
-         - POST to /api/scrape with a Startup India portal URL
-         - Verify all fields are extracted correctly using XPaths
-         - Check if website is crawled when found
-         - Verify data is saved to MongoDB
+      **Test Scenario 2: Bulk URL Scraping**
+      ```bash
+      curl -X POST http://localhost:8001/api/scrape/bulk \
+        -H "Content-Type: application/json" \
+        -d '{"urls": ["URL1", "URL2", "URL3"]}'
+      ```
       
-      2. **Bulk URL Scraping**:
-         - POST to /api/scrape/bulk with multiple URLs
-         - Verify rate limiting is working (1 second delay between requests)
-         - Check all URLs are processed successfully
+      **Test Scenario 3: Check Saved Data**
+      ```bash
+      curl http://localhost:8001/api/scraped-data
+      ```
       
-      3. **Website Crawling**:
-         - When a website URL is found in Startup India data
-         - Verify the website is crawled for additional details
-         - Check about_company field is populated
-         - Verify additional contact info is extracted
+      ## What to Verify:
       
-      4. **Error Handling**:
-         - Test with invalid URLs
-         - Test with pages that don't match XPath structure
-         - Verify fallback mechanism works
-         - Check error messages are logged properly
+      1. ✓ All 15 fields are extracted when available
+      2. ✓ Playwright extraction works (check logs for "Playwright extracted")
+      3. ✓ BeautifulSoup fallback activates if Playwright fails
+      4. ✓ Website crawling happens when website URL is found
+      5. ✓ Data is saved to MongoDB correctly
+      6. ✓ Invalid values are filtered out
+      7. ✓ Domain is automatically extracted from website
+      8. ✓ Error handling works for invalid URLs
       
-      ## Expected Behavior:
-      - XPath selectors should extract data more accurately than before
-      - All 15 fields should be extracted when available on the page
-      - Website crawling should work automatically when website URL is found
-      - Data should be stored in MongoDB with proper structure
-      - Invalid/placeholder values should be filtered out
+      ## Expected Log Messages:
+      - "Navigating to URL with Playwright: [URL]"
+      - "Extracted [field]: [value]" (for each field found)
+      - "Playwright extracted X fields successfully"
+      - OR "Falling back to BeautifulSoup scraping..." (if Playwright fails)
+      - "Website found: [URL], crawling for additional details..."
+      - "Successfully saved scraped data for [URL]"
       
-      Backend is running and ready for testing.
+      Backend is running and ready for testing at http://localhost:8001
+      
+      **IMPORTANT**: Please provide actual Startup India portal URLs to test with, as the scraper is specifically designed for that portal's structure.
