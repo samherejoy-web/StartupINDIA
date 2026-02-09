@@ -264,50 +264,94 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
         logger.error(f"Error scraping startup page: {e}", exc_info=True)
         raise
 
-def scrape_website_details(website_url: str) -> Dict[str, Any]:
-    """Scrape additional details from company website"""
+async def scrape_website_details(website_url: str) -> Dict[str, Any]:
+    """Scrape additional details from company website using Playwright for better JavaScript support"""
     try:
         if not website_url.startswith('http'):
             website_url = 'https://' + website_url
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(website_url, headers=headers, timeout=15)
-        response.raise_for_status()
+        logger.info(f"Scraping website: {website_url}")
         
-        soup = BeautifulSoup(response.content, 'html.parser')
-        data = {}
-        
-        # Get all text
-        all_text = soup.get_text()
-        
-        # Extract about section
-        about_section = soup.find(['section', 'div'], class_=re.compile('about|description|overview', re.I))
-        if about_section:
-            about_text = about_section.get_text(strip=True)
-            data['about_company'] = about_text[:500] if len(about_text) > 500 else about_text
-        
-        # Extract contact info
-        emails = extract_emails(all_text)
-        if emails:
-            data['email'] = emails[0]
-        
-        phones = extract_phone_numbers(all_text)
-        if phones:
-            data['contact_number'] = phones[0] if len(phones) > 0 else None
-            data['mobile_number'] = phones[1] if len(phones) > 1 else None
-        
-        # Extract location from footer or contact section
-        contact_section = soup.find(['section', 'div', 'footer'], class_=re.compile('contact|footer|address', re.I))
-        if contact_section:
-            contact_text = contact_section.get_text()
-            # Look for location patterns
-            location_match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z][a-z]+)', contact_text)
-            if location_match:
-                data['location'] = location_match.group(1)
-        
-        return data
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                executable_path='/pw-browsers/chromium-1208/chrome-linux64/chrome',
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            )
+            
+            page = await browser.new_page(viewport={'width': 1920, 'height': 1080})
+            
+            # Set user agent
+            await page.set_extra_http_headers({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+            
+            try:
+                # Navigate to website with timeout
+                await page.goto(website_url, wait_until='domcontentloaded', timeout=20000)
+                await asyncio.sleep(3)  # Wait for content to render
+                
+                html_content = await page.content()
+                await browser.close()
+                
+                # Parse with BeautifulSoup
+                soup = BeautifulSoup(html_content, 'html.parser')
+                data = {}
+                
+                # Get all text
+                all_text = soup.get_text()
+                
+                # Extract about section
+                about_section = soup.find(['section', 'div'], class_=re.compile('about|description|overview|company-info', re.I))
+                if about_section:
+                    about_text = about_section.get_text(strip=True)
+                    # Clean up the text
+                    about_text = ' '.join(about_text.split())  # Remove extra whitespace
+                    if about_text and len(about_text) > 20:
+                        data['about_company'] = about_text[:1000] if len(about_text) > 1000 else about_text
+                        logger.info(f"Extracted about section: {data['about_company'][:100]}...")
+                
+                # Extract contact info
+                emails = extract_emails(all_text)
+                if emails:
+                    # Filter out common false positives
+                    valid_emails = [e for e in emails if not any(x in e.lower() for x in [
+                        'example', 'test', 'noreply', 'support@wix', 'example.com'
+                    ])]
+                    if valid_emails:
+                        data['email'] = valid_emails[0]
+                        logger.info(f"Extracted email from website: {data['email']}")
+                
+                phones = extract_phone_numbers(all_text)
+                if phones:
+                    # Filter out obviously fake numbers
+                    valid_phones = [p for p in phones if (
+                        len(p) >= 10 and 
+                        p not in ['0000000000', '1111111111', '9999999999']
+                    )]
+                    if valid_phones:
+                        data['contact_number'] = valid_phones[0] if len(valid_phones) > 0 else None
+                        data['mobile_number'] = valid_phones[1] if len(valid_phones) > 1 else None
+                        logger.info(f"Extracted phone numbers from website")
+                
+                # Extract location from footer or contact section
+                contact_section = soup.find(['section', 'div', 'footer'], class_=re.compile('contact|footer|address|location', re.I))
+                if contact_section:
+                    contact_text = contact_section.get_text()
+                    # Look for location patterns
+                    location_match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z][a-z]+)', contact_text)
+                    if location_match:
+                        data['location'] = location_match.group(1)
+                        logger.info(f"Extracted location from website: {data['location']}")
+                
+                logger.info(f"Successfully scraped website with {len(data)} fields")
+                return data
+                
+            except Exception as e:
+                logger.error(f"Error loading website {website_url}: {e}")
+                await browser.close()
+                return {}
+                
     except Exception as e:
         logger.error(f"Error scraping website: {e}")
         return {}
