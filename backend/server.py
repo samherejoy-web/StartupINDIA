@@ -268,20 +268,32 @@ async def scrape_url(url: str) -> ScrapedData:
         return error_data
 
 # API Key verification
-async def verify_api_key(authorization: str = Header(None)):
+async def verify_api_key(authorization: Optional[str] = Header(None)):
     """Verify API key from Authorization header"""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
+    if authorization is None:
+        raise HTTPException(
+            status_code=401, 
+            detail="Authorization header required",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
     
     if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid authorization format. Use 'Bearer YOUR_API_KEY'",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
     
     api_key = authorization.replace("Bearer ", "")
     
     # Check if key exists and is active
     key_doc = await db.api_keys.find_one({"key": api_key, "is_active": True}, {"_id": 0})
     if not key_doc:
-        raise HTTPException(status_code=401, detail="Invalid or inactive API key")
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid or inactive API key",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
     
     # Update last used timestamp
     await db.api_keys.update_one(
