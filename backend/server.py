@@ -116,24 +116,36 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             )
             
-            # Create a new page
-            page = await browser.new_page()
+            # Create a new page with viewport
+            page = await browser.new_page(viewport={'width': 1920, 'height': 1080})
             
             # Set user agent to avoid bot detection
             await page.set_extra_http_headers({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5'
             })
             
-            # Navigate to the URL with domcontentloaded instead of networkidle
+            # Navigate to the URL with domcontentloaded
             logger.info(f"Navigating to URL: {url}")
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
             
-            # Wait for content to load - increase delay to allow JavaScript to render
+            # Wait for content to load - significantly increase delay to ensure JavaScript renders content
             logger.info("Waiting for content to load...")
-            await asyncio.sleep(8)  # 8 second delay to ensure JavaScript renders content
+            await asyncio.sleep(12)  # 12 second delay to ensure JavaScript fully renders content
+            
+            # Try to wait for any content to appear (look for common startup page elements)
+            try:
+                # Wait for any of these possible selectors
+                await page.wait_for_selector('[class*="profile"], [class*="startup"], [class*="company"], main, article', timeout=5000)
+            except PlaywrightTimeoutError:
+                logger.warning("Timeout waiting for content selectors, continuing anyway...")
             
             # Get the fully rendered HTML
             html_content = await page.content()
+            
+            # Save HTML for debugging (first 10000 chars)
+            logger.info(f"Page HTML (first 10000 chars): {html_content[:10000]}")
             
             # Close browser
             await browser.close()
@@ -142,64 +154,104 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             soup = BeautifulSoup(html_content, 'html.parser')
             data = {}
             
-            # Extract name
-            name_elem = soup.find('h1') or soup.find('h2', class_=re.compile('name|title', re.I))
-            if name_elem:
-                data['name'] = name_elem.get_text(strip=True)
-            
             # Extract all text for parsing
             all_text = soup.get_text()
             
             # Log a snippet of the content for debugging
             logger.info(f"Page content length: {len(html_content)} chars")
-            logger.info(f"First 500 chars of text: {all_text[:500]}")
+            logger.info(f"First 1000 chars of text: {all_text[:1000]}")
             
-            # Extract structured data from the page
-            labels = soup.find_all(['dt', 'label', 'span', 'div'], class_=re.compile('label|key|field', re.I))
+            # Check if we're getting the subscription page or actual content
+            if "Thank you for subscribing" in all_text or "subscribe" in all_text.lower():
+                logger.warning("Detected subscription/thank you page - content may not be available")
+            
+            # Try multiple strategies to find the company/startup name
+            name_elem = (
+                soup.find('h1', class_=re.compile('name|title|heading|company', re.I)) or
+                soup.find('h2', class_=re.compile('name|title|heading|company', re.I)) or
+                soup.find('div', class_=re.compile('startup.*name|company.*name', re.I)) or
+                soup.find('h1') or
+                soup.find('h2')
+            )
+            if name_elem:
+                name_text = name_elem.get_text(strip=True)
+                # Filter out generic page titles
+                if name_text and name_text not in ['Startup Details', 'Profile', 'Dashboard', 'Subscribe']:
+                    data['name'] = name_text
+            
+            # Look for structured data in various formats
+            # Try definition lists
+            dts = soup.find_all('dt')
+            for dt in dts:
+                dt_text = dt.get_text(strip=True).lower()
+                dd = dt.find_next_sibling('dd')
+                if dd:
+                    value = dd.get_text(strip=True)
+                    if value and value not in ['×', '—', '-', 'N/A']:
+                        if 'website' in dt_text or 'url' in dt_text:
+                            data['website'] = value
+                        elif 'email' in dt_text:
+                            data['email'] = value
+                        elif 'mobile' in dt_text:
+                            data['mobile_number'] = value
+                        elif 'phone' in dt_text or 'contact' in dt_text:
+                            data['contact_number'] = value
+                        elif 'stage' in dt_text:
+                            data['stage'] = value
+                        elif 'industry' in dt_text:
+                            data['focus_industry'] = value
+                        elif 'sector' in dt_text:
+                            data['focus_sector'] = value
+                        elif 'location' in dt_text or 'city' in dt_text or 'address' in dt_text:
+                            data['location'] = value
+            
+            # Try label/value pairs
+            labels = soup.find_all(['label', 'span', 'div'], class_=re.compile('label|field.*label|key', re.I))
             for label in labels:
                 label_text = label.get_text(strip=True).lower()
-                value_elem = label.find_next_sibling() or label.parent.find_next('dd') or label.find_next('span')
+                # Find value in various ways
+                value_elem = (
+                    label.find_next_sibling(['span', 'div', 'p']) or
+                    label.parent.find_next(['span', 'div', 'p'], class_=re.compile('value|data|info', re.I))
+                )
                 
                 if value_elem:
                     value = value_elem.get_text(strip=True)
-                    
-                    if 'website' in label_text or 'url' in label_text:
-                        data['website'] = value
-                    elif 'email' in label_text:
-                        data['email'] = value
-                    elif 'phone' in label_text or 'contact' in label_text or 'mobile' in label_text:
-                        if 'mobile' in label_text:
+                    if value and value not in ['×', '—', '-', 'N/A', '']:
+                        if 'website' in label_text:
+                            data['website'] = value
+                        elif 'email' in label_text:
+                            data['email'] = value
+                        elif 'mobile' in label_text:
                             data['mobile_number'] = value
-                        else:
+                        elif 'phone' in label_text or 'contact' in label_text:
                             data['contact_number'] = value
-                    elif 'stage' in label_text:
-                        data['stage'] = value
-                    elif 'industry' in label_text:
-                        data['focus_industry'] = value
-                    elif 'sector' in label_text:
-                        data['focus_sector'] = value
-                    elif 'service' in label_text:
-                        data['service_area'] = value
-                    elif 'location' in label_text or 'address' in label_text or 'city' in label_text:
-                        data['location'] = value
-                    elif 'year' in label_text or 'active' in label_text:
-                        data['active_years'] = value
-                    elif 'engagement' in label_text:
-                        data['engagement_level'] = value
-                    elif 'portal' in label_text:
-                        data['active_on_portal'] = value
+                        elif 'stage' in label_text:
+                            data['stage'] = value
+                        elif 'industry' in label_text:
+                            data['focus_industry'] = value
+                        elif 'sector' in label_text:
+                            data['focus_sector'] = value
+                        elif 'location' in label_text or 'city' in label_text:
+                            data['location'] = value
             
             # Extract emails and phones from full text if not found
             if not data.get('email'):
                 emails = extract_emails(all_text)
                 if emails:
-                    data['email'] = emails[0]
+                    # Filter out common false positives
+                    valid_emails = [e for e in emails if not any(x in e.lower() for x in ['example', 'test', 'noreply'])]
+                    if valid_emails:
+                        data['email'] = valid_emails[0]
             
             if not data.get('contact_number') and not data.get('mobile_number'):
                 phones = extract_phone_numbers(all_text)
                 if phones:
-                    data['contact_number'] = phones[0] if len(phones) > 0 else None
-                    data['mobile_number'] = phones[1] if len(phones) > 1 else None
+                    # Filter out obviously fake numbers
+                    valid_phones = [p for p in phones if len(p) >= 10 and p not in ['0000000000', '1111111111']]
+                    if valid_phones:
+                        data['contact_number'] = valid_phones[0] if len(valid_phones) > 0 else None
+                        data['mobile_number'] = valid_phones[1] if len(valid_phones) > 1 else None
             
             # Extract domain
             if data.get('website'):
