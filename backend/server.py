@@ -113,7 +113,7 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             browser = await p.chromium.launch(
                 headless=True,
                 executable_path='/pw-browsers/chromium-1208/chrome-linux64/chrome',
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             )
             
             # Create a new page
@@ -124,20 +124,13 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             })
             
-            # Navigate to the URL
+            # Navigate to the URL with domcontentloaded instead of networkidle
             logger.info(f"Navigating to URL: {url}")
-            await page.goto(url, wait_until='networkidle', timeout=30000)
+            await page.goto(url, wait_until='domcontentloaded', timeout=60000)
             
             # Wait for content to load - increase delay to allow JavaScript to render
             logger.info("Waiting for content to load...")
-            await asyncio.sleep(5)  # 5 second delay to ensure content loads
-            
-            # Try to wait for specific content indicators
-            try:
-                # Wait for main content area (adjust selector based on actual page structure)
-                await page.wait_for_selector('body', timeout=10000)
-            except PlaywrightTimeoutError:
-                logger.warning("Timeout waiting for body selector, continuing anyway...")
+            await asyncio.sleep(8)  # 8 second delay to ensure JavaScript renders content
             
             # Get the fully rendered HTML
             html_content = await page.content()
