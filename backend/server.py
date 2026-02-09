@@ -18,6 +18,7 @@ import csv
 import io
 import json
 import secrets
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
