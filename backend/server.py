@@ -266,7 +266,7 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                     if name_text and name_text not in ['Startup Details', 'Profile', 'Dashboard', 'Subscribe'] and len(name_text) > 3:
                         data['name'] = name_text
             
-            # Look for structured data in various formats
+            # Look for structured data in various formats (as fallback)
             # Try definition lists
             dts = soup.find_all('dt')
             for dt in dts:
@@ -274,25 +274,33 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                 dd = dt.find_next_sibling('dd')
                 if dd:
                     value = dd.get_text(strip=True)
-                    if value and value not in ['×', '—', '-', 'N/A']:
+                    if value and value not in ['×', '—', '-', 'N/A', 'XXXXXXX', '0000000000']:
                         if 'website' in dt_text or 'url' in dt_text:
-                            data['website'] = value
+                            if not data.get('website'):
+                                data['website'] = value
                         elif 'email' in dt_text:
-                            data['email'] = value
+                            if not data.get('email'):
+                                data['email'] = value
                         elif 'mobile' in dt_text:
-                            data['mobile_number'] = value
+                            if not data.get('mobile_number'):
+                                data['mobile_number'] = value
                         elif 'phone' in dt_text or 'contact' in dt_text:
-                            data['contact_number'] = value
+                            if not data.get('contact_number'):
+                                data['contact_number'] = value
                         elif 'stage' in dt_text:
-                            data['stage'] = value
+                            if not data.get('stage'):
+                                data['stage'] = value
                         elif 'industry' in dt_text:
-                            data['focus_industry'] = value
+                            if not data.get('focus_industry'):
+                                data['focus_industry'] = value
                         elif 'sector' in dt_text:
-                            data['focus_sector'] = value
+                            if not data.get('focus_sector'):
+                                data['focus_sector'] = value
                         elif 'location' in dt_text or 'city' in dt_text or 'address' in dt_text:
-                            data['location'] = value
+                            if not data.get('location'):
+                                data['location'] = value
             
-            # Try label/value pairs
+            # Try label/value pairs (as fallback)
             labels = soup.find_all(['label', 'span', 'div'], class_=re.compile('label|field.*label|key', re.I))
             for label in labels:
                 label_text = label.get_text(strip=True).lower()
@@ -304,45 +312,27 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
                 
                 if value_elem:
                     value = value_elem.get_text(strip=True)
-                    if value and value not in ['×', '—', '-', 'N/A', '']:
-                        if 'website' in label_text:
+                    if value and value not in ['×', '—', '-', 'N/A', '', 'XXXXXXX', '0000000000']:
+                        if 'website' in label_text and not data.get('website'):
                             data['website'] = value
-                        elif 'email' in label_text:
+                        elif 'email' in label_text and not data.get('email'):
                             data['email'] = value
-                        elif 'mobile' in label_text:
+                        elif 'mobile' in label_text and not data.get('mobile_number'):
                             data['mobile_number'] = value
-                        elif 'phone' in label_text or 'contact' in label_text:
+                        elif ('phone' in label_text or 'contact' in label_text) and not data.get('contact_number'):
                             data['contact_number'] = value
-                        elif 'stage' in label_text:
+                        elif 'stage' in label_text and not data.get('stage'):
                             data['stage'] = value
-                        elif 'industry' in label_text:
+                        elif 'industry' in label_text and not data.get('focus_industry'):
                             data['focus_industry'] = value
-                        elif 'sector' in label_text:
+                        elif 'sector' in label_text and not data.get('focus_sector'):
                             data['focus_sector'] = value
-                        elif 'location' in label_text or 'city' in label_text:
+                        elif ('location' in label_text or 'city' in label_text) and not data.get('location'):
                             data['location'] = value
             
-            # Extract emails and phones from full text if not found
-            if not data.get('email'):
-                emails = extract_emails(all_text)
-                if emails:
-                    # Filter out common false positives
-                    valid_emails = [e for e in emails if not any(x in e.lower() for x in ['example', 'test', 'noreply'])]
-                    if valid_emails:
-                        data['email'] = valid_emails[0]
-            
-            if not data.get('contact_number') and not data.get('mobile_number'):
-                phones = extract_phone_numbers(all_text)
-                if phones:
-                    # Filter out obviously fake numbers
-                    valid_phones = [p for p in phones if len(p) >= 10 and p not in ['0000000000', '1111111111']]
-                    if valid_phones:
-                        data['contact_number'] = valid_phones[0] if len(valid_phones) > 0 else None
-                        data['mobile_number'] = valid_phones[1] if len(valid_phones) > 1 else None
-            
-            # Extract domain
-            if data.get('website'):
-                domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', data['website'])
+            # Final cleanup - ensure domain is extracted if website is present
+            if data.get('website') and not data.get('domain'):
+                domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', data['website'])
                 if domain_match:
                     data['domain'] = domain_match.group(1)
             
