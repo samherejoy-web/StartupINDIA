@@ -105,8 +105,179 @@ def extract_phone_numbers(text: str) -> List[str]:
         phones.extend(re.findall(pattern, text))
     return list(set(phones))
 
+async def scrape_with_beautifulsoup(url: str) -> Dict[str, Any]:
+    """Fallback scraping using BeautifulSoup and requests"""
+    logger.info(f"Using BeautifulSoup fallback for URL: {url}")
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5'
+        }
+        
+        response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        data = {}
+        all_text = soup.get_text()
+        
+        logger.info(f"Page content length: {len(response.content)} bytes")
+        
+        # Try to find elements by ID and navigate the DOM structure
+        # Name extraction
+        try:
+            txt_editor = soup.find(id='txtEditor')
+            if txt_editor:
+                name_elem = txt_editor.select_one('div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > p')
+                if name_elem:
+                    data['name'] = name_elem.get_text(strip=True)
+                    logger.info(f"Extracted name: {data['name']}")
+        except Exception as e:
+            logger.warning(f"Could not extract name: {e}")
+        
+        # Website extraction
+        try:
+            txt_editor = soup.find(id='txtEditor')
+            if txt_editor:
+                website_elem = txt_editor.select_one('div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > span:nth-of-type(3) > a')
+                if website_elem and website_elem.get('href'):
+                    data['website'] = website_elem.get('href')
+                    logger.info(f"Extracted website: {data['website']}")
+                    # Extract domain
+                    domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', data['website'])
+                    if domain_match:
+                        data['domain'] = domain_match.group(1)
+        except Exception as e:
+            logger.warning(f"Could not extract website: {e}")
+        
+        # Email extraction
+        try:
+            txt_editor = soup.find(id='txtEditor')
+            if txt_editor:
+                email_elem = txt_editor.select_one('div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > span:nth-of-type(2)')
+                if email_elem:
+                    email_text = email_elem.get_text(strip=True)
+                    if '@' in email_text:
+                        data['email'] = email_text
+                        logger.info(f"Extracted email: {data['email']}")
+        except Exception as e:
+            logger.warning(f"Could not extract email: {e}")
+        
+        # Contact number extraction
+        try:
+            txt_editor = soup.find(id='txtEditor')
+            if txt_editor:
+                contact_elem = txt_editor.select_one('div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > span:nth-of-type(1)')
+                if contact_elem:
+                    contact_text = contact_elem.get_text(strip=True)
+                    if contact_text and contact_text not in ['×', '—', '-', 'N/A', 'XXXXXXX', '0000000000']:
+                        data['contact_number'] = contact_text
+                        data['mobile_number'] = contact_text
+                        logger.info(f"Extracted contact: {contact_text}")
+        except Exception as e:
+            logger.warning(f"Could not extract contact: {e}")
+        
+        # Other fields from the second section
+        try:
+            section = soup.find(id='1638164275868262-0')
+            if section:
+                spans = section.select('div > div > div > div > div > div > div:nth-of-type(2) > div > div > div > div > span')
+                
+                # Try to extract fields by position
+                for i, span in enumerate(spans, 1):
+                    span_text = span.select_one('span:nth-of-type(2)')
+                    if span_text:
+                        value = span_text.get_text(strip=True)
+                        if value and value not in ['×', '—', '-', 'N/A', '']:
+                            if i == 1:
+                                data['stage'] = value
+                            elif i == 2:
+                                data['focus_industry'] = value
+                            elif i == 3:
+                                data['focus_sector'] = value
+                            elif i == 4:
+                                data['service_area'] = value
+                            elif i == 5:
+                                data['location'] = value
+                            elif i == 6:
+                                # Active years might have a <p> tag
+                                p_elem = span_text.find('p')
+                                if p_elem:
+                                    data['active_years'] = p_elem.get_text(strip=True)
+                                else:
+                                    data['active_years'] = value
+                
+                # About company
+                about_elem = section.select_one('div > div > div > div > div > div > div:nth-of-type(1) > div > div:nth-of-type(1)')
+                if about_elem:
+                    about_text = about_elem.get_text(strip=True)
+                    if about_text and len(about_text) > 10:
+                        data['about_company'] = about_text
+                        logger.info(f"Extracted about_company: {about_text[:100]}...")
+        except Exception as e:
+            logger.warning(f"Could not extract secondary fields: {e}")
+        
+        # Engagement level
+        try:
+            txt_editor = soup.find(id='txtEditor')
+            if txt_editor:
+                engagement_elem = txt_editor.select_one('div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > h6:nth-of-type(1) > span > strong')
+                if engagement_elem:
+                    engagement_text = engagement_elem.get_text(strip=True)
+                    if engagement_text:
+                        data['engagement_level'] = engagement_text
+                        data['active_on_portal'] = engagement_text
+                        logger.info(f"Extracted engagement: {engagement_text}")
+        except Exception as e:
+            logger.warning(f"Could not extract engagement: {e}")
+        
+        # Regex fallback for missing critical fields
+        if not data.get('name'):
+            company_patterns = [
+                r'([A-Z][A-Z\s&]+(?:LLP|PRIVATE LIMITED|PVT\.? LTD\.?|LIMITED|LTD\.?))',
+                r'Company Name:?\s*([A-Z][A-Za-z\s&]+(?:LLP|Pvt|Ltd|Limited))',
+            ]
+            for pattern in company_patterns:
+                match = re.search(pattern, all_text)
+                if match:
+                    potential_name = match.group(1).strip()
+                    if len(potential_name) > 5:
+                        data['name'] = potential_name
+                        break
+        
+        if not data.get('email'):
+            emails = extract_emails(all_text)
+            if emails:
+                valid_emails = [e for e in emails if not any(x in e.lower() for x in [
+                    'example', 'test', 'noreply', 'xxxx', 'xxx@', '@startupindia', '@gov'
+                ])]
+                if valid_emails:
+                    data['email'] = valid_emails[0]
+        
+        if not data.get('website'):
+            website_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+\.com[^\s<>"]*'
+            website_matches = re.findall(website_pattern, all_text)
+            if website_matches:
+                valid_websites = [w for w in website_matches if not any(x in w.lower() for x in [
+                    'startupindia', 'google', 'facebook', 'linkedin', 'twitter', '.js', '.css'
+                ])]
+                if valid_websites:
+                    data['website'] = valid_websites[0]
+                    domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', data['website'])
+                    if domain_match:
+                        data['domain'] = domain_match.group(1)
+        
+        logger.info(f"BeautifulSoup extracted {len(data)} fields: {list(data.keys())}")
+        return data
+    except Exception as e:
+        logger.error(f"BeautifulSoup fallback also failed: {e}", exc_info=True)
+        return {}
+
 async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
-    """Scrape startup India portal page using Playwright with XPath selectors"""
+    """Scrape startup India portal page using Playwright with XPath selectors, fallback to BeautifulSoup"""
+    playwright_failed = False
+    
     try:
         async with async_playwright() as p:
             # Launch browser in headless mode
@@ -127,7 +298,7 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             })
             
             # Navigate to the URL
-            logger.info(f"Navigating to URL: {url}")
+            logger.info(f"Navigating to URL with Playwright: {url}")
             await page.goto(url, wait_until='domcontentloaded', timeout=60000)
             
             # Wait for content to load - give enough time for JavaScript to render
@@ -258,11 +429,17 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             # Close browser
             await browser.close()
             
-            logger.info(f"Final extracted data: {data}")
+            logger.info(f"Playwright extracted {len(data)} fields successfully")
             return data
+            
     except Exception as e:
-        logger.error(f"Error scraping startup page: {e}", exc_info=True)
-        raise
+        logger.error(f"Playwright scraping failed: {e}", exc_info=True)
+        playwright_failed = True
+    
+    # If Playwright failed, try BeautifulSoup fallback
+    if playwright_failed:
+        logger.info("Falling back to BeautifulSoup scraping...")
+        return await scrape_with_beautifulsoup(url)
 
 async def scrape_website_details(website_url: str) -> Dict[str, Any]:
     """Scrape additional details from company website using Playwright for better JavaScript support"""
