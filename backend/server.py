@@ -270,8 +270,8 @@ def scrape_website_details(website_url: str) -> Dict[str, Any]:
 async def scrape_url(url: str) -> ScrapedData:
     """Main scraping function"""
     try:
-        # First scrape the startup India page
-        startup_data = await asyncio.to_thread(scrape_startup_india_page, url)
+        # First scrape the startup India page (now async)
+        startup_data = await scrape_startup_india_page(url)
         
         # If website found, scrape additional details
         if startup_data.get('website'):
