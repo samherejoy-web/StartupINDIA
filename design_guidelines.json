@@ -1,0 +1,159 @@
+{
+  "identity": {
+    "name": "E1",
+    "role": "Creative Designer (Anti-AI)",
+    "principles": [
+      "Fusion over Imitation",
+      "Emotion First",
+      "Content is King",
+      "Zoom In",
+      "Negative Space",
+      "Contrast"
+    ],
+    "anti_patterns": [
+      "Purple/Teal CTA",
+      "Inter everywhere (for headings)",
+      "Center-Everything Disease",
+      "Gradient Overload"
+    ]
+  },
+  "theme_strategy": {
+    "primary_theme": "light",
+    "secondary_theme": "dark",
+    "mode": "toggle",
+    "rationale": "Data-heavy applications require the high contrast and clarity of light mode for long-term readability. Dark mode is provided for low-light environments and 'hacker' persona preference."
+  },
+  "colors": {
+    "palette_name": "Swiss Tactical",
+    "archetype": "Swiss & High-Contrast",
+    "definitions": {
+      "light": {
+        "background": "#FFFFFF",
+        "foreground": "#09090B",
+        "card": "#FFFFFF",
+        "card_foreground": "#09090B",
+        "popover": "#FFFFFF",
+        "popover_foreground": "#09090B",
+        "primary": "#F97316",
+        "primary_foreground": "#FAFAFA",
+        "secondary": "#F4F4F5",
+        "secondary_foreground": "#18181B",
+        "muted": "#F4F4F5",
+        "muted_foreground": "#71717A",
+        "accent": "#F4F4F5",
+        "accent_foreground": "#18181B",
+        "destructive": "#EF4444",
+        "destructive_foreground": "#FAFAFA",
+        "border": "#E4E4E7",
+        "input": "#E4E4E7",
+        "ring": "#F97316"
+      },
+      "dark": {
+        "background": "#09090B",
+        "foreground": "#FAFAFA",
+        "card": "#09090B",
+        "card_foreground": "#FAFAFA",
+        "popover": "#09090B",
+        "popover_foreground": "#FAFAFA",
+        "primary": "#F97316",
+        "primary_foreground": "#FAFAFA",
+        "secondary": "#27272A",
+        "secondary_foreground": "#FAFAFA",
+        "muted": "#27272A",
+        "muted_foreground": "#A1A1AA",
+        "accent": "#27272A",
+        "accent_foreground": "#FAFAFA",
+        "destructive": "#7F1D1D",
+        "destructive_foreground": "#FAFAFA",
+        "border": "#27272A",
+        "input": "#27272A",
+        "ring": "#D97706"
+      }
+    },
+    "rules": [
+      "Never use pure black (#000000). Use Zinc-950 (#09090B).",
+      "Primary color (Orange) is for ACTIONS only (Buttons, Active States).",
+      "Borders should be subtle but present to define structure (Swiss Grid).",
+      "No gradients on backgrounds. Flat, high-contrast surfaces."
+    ]
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Manrope, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "weights": {
+      "headings": "800 (ExtraBold) or 300 (Light) - High Contrast",
+      "body": "400 (Regular) and 500 (Medium)"
+    },
+    "rules": [
+      "Headings must be tight (tracking-tight).",
+      "Data cells and IDs must use Mono font.",
+      "Labels must be Uppercase + Tiny + Wide Spacing (tracking-widest)."
+    ],
+    "installation": "Import fonts via Google Fonts in index.css: @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@300;400;800&display=swap');"
+  },
+  "layout": {
+    "grid_system": "Mode B: High Density Grid",
+    "spacing_scale": "Tailwind Scale (p-1 to p-64)",
+    "container_style": "Sharp edges or max rounded-md (4px). No large radii.",
+    "strategies": [
+      "Dashboard: grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4.",
+      "Results: Dense tables. Use 'w-full' and 'border-collapse'.",
+      "Padding: Use generous padding inside containers (p-6 or p-8) even in dense grids."
+    ]
+  },
+  "components": {
+    "library": "shadcn/ui",
+    "customization_rules": [
+      "Buttons: Sharp corners or small radius (rounded-md). High contrast hover states.",
+      "Cards: Flat, 1px border, NO SHADOW by default. Hover: subtle shadow.",
+      "Inputs: High contrast borders. Focus ring must be sharp.",
+      "Tables: Minimalist. Border-bottom only for rows. Mono font for values.",
+      "Toasts: Use 'sonner' for notifications."
+    ],
+    "specific_components": {
+      "StatusBadge": "Pill-shaped, solid background (muted), colored dot indicator.",
+      "DataCard": "Rectangular, border-border, p-6, mono font for value.",
+      "ScrapeButton": "Primary color, bold text, icon-right."
+    }
+  },
+  "assets": {
+    "icons": "lucide-react (default)",
+    "images": [
+      {
+        "category": "background",
+        "url": "https://images.unsplash.com/photo-1765046255500-ce203b84c307?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhdGElMjB2aXN1YWxpemF0aW9uJTIwbWluaW1hbHxlbnwwfHx8fDE3NzA2MTcyMjB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract flowing grid pattern on a soft gray background. Use for Hero section background or Empty State with low opacity.",
+        "usage": "Hero Background / Empty State"
+      },
+      {
+        "category": "abstract",
+        "url": "https://images.unsplash.com/photo-1765046255478-55efc763637c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhdGElMjB2aXN1YWxpemF0aW9uJTIwbWluaW1hbHxlbnwwfHx8fDE3NzA2MTcyMjB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract white wavy lines with grid pattern. Alternative background.",
+        "usage": "Login / Signup Side Panel"
+      }
+    ]
+  },
+  "universal_guidelines": [
+    "Do not use generic centered layouts.",
+    "Create depth through z-index and subtle borders, not heavy shadows.",
+    "Use glass-morphism (backdrop-blur-xl) for sticky headers.",
+    "Every interaction needs micro-animations (hover, focus, active).",
+    "Use 2-3x more spacing than feels comfortable.",
+    "All interactive elements MUST include 'data-testid'.",
+    "Do not use 'transition: all'. Animate specific properties.",
+    "Export components as named exports, pages as default exports."
+  ],
+  "instructions_to_main_agent": [
+    "1. Install fonts defined in Typography section.",
+    "2. Update tailwind.config.js with the Swiss Tactical color palette.",
+    "3. Create a 'Layout' component that handles the Sidebar/Header structure.",
+    "4. Build the 'Dashboard' page using the High Density Grid.",
+    "5. Implement the 'ScraperForm' with validation and progress indication.",
+    "6. Create the 'ResultsTable' using Shadcn Table but styled minimally.",
+    "7. Ensure all API calls use the Bearer token management system.",
+    "8. Use the provided image URLs for empty states."
+  ]
+}
