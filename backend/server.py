@@ -105,82 +105,118 @@ def extract_phone_numbers(text: str) -> List[str]:
         phones.extend(re.findall(pattern, text))
     return list(set(phones))
 
-def scrape_startup_india_page(url: str) -> Dict[str, Any]:
-    """Scrape startup India portal page"""
+async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
+    """Scrape startup India portal page using Playwright for JavaScript-rendered content"""
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        data = {}
-        
-        # Extract name
-        name_elem = soup.find('h1') or soup.find('h2', class_=re.compile('name|title', re.I))
-        if name_elem:
-            data['name'] = name_elem.get_text(strip=True)
-        
-        # Extract all text for parsing
-        all_text = soup.get_text()
-        
-        # Extract structured data from the page
-        labels = soup.find_all(['dt', 'label', 'span', 'div'], class_=re.compile('label|key|field', re.I))
-        for label in labels:
-            label_text = label.get_text(strip=True).lower()
-            value_elem = label.find_next_sibling() or label.parent.find_next('dd') or label.find_next('span')
+        async with async_playwright() as p:
+            # Launch browser in headless mode
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            )
             
-            if value_elem:
-                value = value_elem.get_text(strip=True)
+            # Create a new page
+            page = await browser.new_page()
+            
+            # Set user agent to avoid bot detection
+            await page.set_extra_http_headers({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+            
+            # Navigate to the URL
+            logger.info(f"Navigating to URL: {url}")
+            await page.goto(url, wait_until='networkidle', timeout=30000)
+            
+            # Wait for content to load - increase delay to allow JavaScript to render
+            logger.info("Waiting for content to load...")
+            await asyncio.sleep(5)  # 5 second delay to ensure content loads
+            
+            # Try to wait for specific content indicators
+            try:
+                # Wait for main content area (adjust selector based on actual page structure)
+                await page.wait_for_selector('body', timeout=10000)
+            except PlaywrightTimeoutError:
+                logger.warning("Timeout waiting for body selector, continuing anyway...")
+            
+            # Get the fully rendered HTML
+            html_content = await page.content()
+            
+            # Close browser
+            await browser.close()
+            
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+            data = {}
+            
+            # Extract name
+            name_elem = soup.find('h1') or soup.find('h2', class_=re.compile('name|title', re.I))
+            if name_elem:
+                data['name'] = name_elem.get_text(strip=True)
+            
+            # Extract all text for parsing
+            all_text = soup.get_text()
+            
+            # Log a snippet of the content for debugging
+            logger.info(f"Page content length: {len(html_content)} chars")
+            logger.info(f"First 500 chars of text: {all_text[:500]}")
+            
+            # Extract structured data from the page
+            labels = soup.find_all(['dt', 'label', 'span', 'div'], class_=re.compile('label|key|field', re.I))
+            for label in labels:
+                label_text = label.get_text(strip=True).lower()
+                value_elem = label.find_next_sibling() or label.parent.find_next('dd') or label.find_next('span')
                 
-                if 'website' in label_text or 'url' in label_text:
-                    data['website'] = value
-                elif 'email' in label_text:
-                    data['email'] = value
-                elif 'phone' in label_text or 'contact' in label_text or 'mobile' in label_text:
-                    if 'mobile' in label_text:
-                        data['mobile_number'] = value
-                    else:
-                        data['contact_number'] = value
-                elif 'stage' in label_text:
-                    data['stage'] = value
-                elif 'industry' in label_text:
-                    data['focus_industry'] = value
-                elif 'sector' in label_text:
-                    data['focus_sector'] = value
-                elif 'service' in label_text:
-                    data['service_area'] = value
-                elif 'location' in label_text or 'address' in label_text or 'city' in label_text:
-                    data['location'] = value
-                elif 'year' in label_text or 'active' in label_text:
-                    data['active_years'] = value
-                elif 'engagement' in label_text:
-                    data['engagement_level'] = value
-                elif 'portal' in label_text:
-                    data['active_on_portal'] = value
-        
-        # Extract emails and phones from full text if not found
-        if not data.get('email'):
-            emails = extract_emails(all_text)
-            if emails:
-                data['email'] = emails[0]
-        
-        if not data.get('contact_number') and not data.get('mobile_number'):
-            phones = extract_phone_numbers(all_text)
-            if phones:
-                data['contact_number'] = phones[0] if len(phones) > 0 else None
-                data['mobile_number'] = phones[1] if len(phones) > 1 else None
-        
-        # Extract domain
-        if data.get('website'):
-            domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', data['website'])
-            if domain_match:
-                data['domain'] = domain_match.group(1)
-        
-        return data
+                if value_elem:
+                    value = value_elem.get_text(strip=True)
+                    
+                    if 'website' in label_text or 'url' in label_text:
+                        data['website'] = value
+                    elif 'email' in label_text:
+                        data['email'] = value
+                    elif 'phone' in label_text or 'contact' in label_text or 'mobile' in label_text:
+                        if 'mobile' in label_text:
+                            data['mobile_number'] = value
+                        else:
+                            data['contact_number'] = value
+                    elif 'stage' in label_text:
+                        data['stage'] = value
+                    elif 'industry' in label_text:
+                        data['focus_industry'] = value
+                    elif 'sector' in label_text:
+                        data['focus_sector'] = value
+                    elif 'service' in label_text:
+                        data['service_area'] = value
+                    elif 'location' in label_text or 'address' in label_text or 'city' in label_text:
+                        data['location'] = value
+                    elif 'year' in label_text or 'active' in label_text:
+                        data['active_years'] = value
+                    elif 'engagement' in label_text:
+                        data['engagement_level'] = value
+                    elif 'portal' in label_text:
+                        data['active_on_portal'] = value
+            
+            # Extract emails and phones from full text if not found
+            if not data.get('email'):
+                emails = extract_emails(all_text)
+                if emails:
+                    data['email'] = emails[0]
+            
+            if not data.get('contact_number') and not data.get('mobile_number'):
+                phones = extract_phone_numbers(all_text)
+                if phones:
+                    data['contact_number'] = phones[0] if len(phones) > 0 else None
+                    data['mobile_number'] = phones[1] if len(phones) > 1 else None
+            
+            # Extract domain
+            if data.get('website'):
+                domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', data['website'])
+                if domain_match:
+                    data['domain'] = domain_match.group(1)
+            
+            logger.info(f"Extracted data: {data}")
+            return data
     except Exception as e:
-        logger.error(f"Error scraping startup page: {e}")
+        logger.error(f"Error scraping startup page: {e}", exc_info=True)
         raise
 
 def scrape_website_details(website_url: str) -> Dict[str, Any]:
