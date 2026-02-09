@@ -359,16 +359,18 @@ async def scrape_website_details(website_url: str) -> Dict[str, Any]:
 async def scrape_url(url: str) -> ScrapedData:
     """Main scraping function"""
     try:
-        # First scrape the startup India page (now async)
+        # First scrape the startup India page
         startup_data = await scrape_startup_india_page(url)
         
-        # If website found, scrape additional details
+        # If website found, scrape additional details from the company website
         if startup_data.get('website'):
-            website_data = await asyncio.to_thread(scrape_website_details, startup_data['website'])
-            # Merge data, preferring startup_data for conflicts
+            logger.info(f"Website found: {startup_data['website']}, crawling for additional details...")
+            website_data = await scrape_website_details(startup_data['website'])
+            # Merge data, preferring startup_data for conflicts (startup data is more reliable)
             for key, value in website_data.items():
                 if not startup_data.get(key) and value:
                     startup_data[key] = value
+                    logger.info(f"Added {key} from website scraping")
         
         scraped = ScrapedData(
             source_url=url,
@@ -379,10 +381,11 @@ async def scrape_url(url: str) -> ScrapedData:
         doc = scraped.model_dump()
         doc['timestamp'] = doc['timestamp'].isoformat()
         await db.scraped_data.insert_one(doc)
+        logger.info(f"Successfully saved scraped data for {url}")
         
         return scraped
     except Exception as e:
-        logger.error(f"Error in scrape_url: {e}")
+        logger.error(f"Error in scrape_url: {e}", exc_info=True)
         error_data = ScrapedData(
             source_url=url,
             status="failed",
