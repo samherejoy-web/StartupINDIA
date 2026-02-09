@@ -195,8 +195,11 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             # Extract emails from text
             emails = extract_emails(all_text)
             if emails:
-                # Filter out masked or placeholder emails
-                valid_emails = [e for e in emails if not any(x in e.lower() for x in ['example', 'test', 'noreply', 'xxxx', 'xxx@'])]
+                # Filter out masked or placeholder emails and UI elements
+                valid_emails = [e for e in emails if not any(x in e.lower() for x in [
+                    'example', 'test', 'noreply', 'xxxx', 'xxx@', 
+                    '@startupindia', '@gov', '@facebook', '@twitter'
+                ])]
                 if valid_emails:
                     data['email'] = valid_emails[0]
             
@@ -204,7 +207,11 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             phones = extract_phone_numbers(all_text)
             if phones:
                 # Filter out obviously fake or masked numbers
-                valid_phones = [p for p in phones if len(p) >= 10 and not all(c in '0X' for c in p) and p not in ['0000000000', '1111111111']]
+                valid_phones = [p for p in phones if (
+                    len(p) >= 10 and 
+                    not all(c in '0X' for c in p) and 
+                    p not in ['0000000000', '1111111111', '9999999999']
+                )]
                 if valid_phones:
                     data['contact_number'] = valid_phones[0] if len(valid_phones) > 0 else None
                     data['mobile_number'] = valid_phones[1] if len(valid_phones) > 1 else None
