@@ -159,11 +159,97 @@ async def scrape_startup_india_page(url: str) -> Dict[str, Any]:
             
             # Log a snippet of the content for debugging
             logger.info(f"Page content length: {len(html_content)} chars")
-            logger.info(f"First 1000 chars of text: {all_text[:1000]}")
+            logger.info(f"First 2000 chars of text: {all_text[:2000]}")
             
             # Check if we're getting the subscription page or actual content
-            if "Thank you for subscribing" in all_text or "subscribe" in all_text.lower():
-                logger.warning("Detected subscription/thank you page - content may not be available")
+            if "Thank you for subscribing" in all_text:
+                logger.warning("Detected 'Thank you for subscribing' page - content may not be fully available")
+            
+            # Use regex patterns to extract data from text
+            # Look for company name patterns (usually in all caps or proper case with LLP/Pvt/Ltd)
+            company_patterns = [
+                r'([A-Z][A-Z\s&]+(?:LLP|PRIVATE LIMITED|PVT\.? LTD\.?|LIMITED|LTD\.?))',
+                r'Company Name:?\s*([A-Z][A-Za-z\s&]+(?:LLP|Pvt|Ltd|Limited))',
+            ]
+            for pattern in company_patterns:
+                match = re.search(pattern, all_text)
+                if match:
+                    potential_name = match.group(1).strip()
+                    if len(potential_name) > 5:  # Reasonable company name length
+                        data['name'] = potential_name
+                        break
+            
+            # Extract website URLs (look for https/www patterns)
+            website_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+\.com[^\s<>"]*'
+            website_matches = re.findall(website_pattern, all_text)
+            if website_matches:
+                # Filter out common false positives
+                valid_websites = [w for w in website_matches if not any(x in w.lower() for x in ['startupindia', 'google', 'facebook', 'linkedin', 'twitter', '.js', '.css'])]
+                if valid_websites:
+                    data['website'] = valid_websites[0]
+                    # Extract domain
+                    domain_match = re.search(r'(?:https?://)?(?:www\.)?([^/\s]+)', data['website'])
+                    if domain_match:
+                        data['domain'] = domain_match.group(1)
+            
+            # Extract emails from text
+            emails = extract_emails(all_text)
+            if emails:
+                # Filter out masked or placeholder emails
+                valid_emails = [e for e in emails if not any(x in e.lower() for x in ['example', 'test', 'noreply', 'xxxx', 'xxx@'])]
+                if valid_emails:
+                    data['email'] = valid_emails[0]
+            
+            # Extract phone numbers
+            phones = extract_phone_numbers(all_text)
+            if phones:
+                # Filter out obviously fake or masked numbers
+                valid_phones = [p for p in phones if len(p) >= 10 and not all(c in '0X' for c in p) and p not in ['0000000000', '1111111111']]
+                if valid_phones:
+                    data['contact_number'] = valid_phones[0] if len(valid_phones) > 0 else None
+                    data['mobile_number'] = valid_phones[1] if len(valid_phones) > 1 else None
+            
+            # Try to find specific fields by looking for labels in text
+            # Location
+            location_patterns = [
+                r'Location:?\s*([A-Z][a-z]+(?:,\s*[A-Z][a-z]+)*)',
+                r'City:?\s*([A-Z][a-z]+)',
+                r'Address:?\s*([A-Za-z\s,]+)',
+            ]
+            for pattern in location_patterns:
+                match = re.search(pattern, all_text)
+                if match:
+                    data['location'] = match.group(1).strip()
+                    break
+            
+            # Stage
+            stage_patterns = [
+                r'Stage:?\s*([\w\s]+?)(?:\n|$|[A-Z][a-z]+:)',
+                r'Startup Stage:?\s*([\w\s]+?)(?:\n|$)',
+            ]
+            for pattern in stage_patterns:
+                match = re.search(pattern, all_text)
+                if match:
+                    stage_value = match.group(1).strip()
+                    if len(stage_value) < 50:  # Reasonable stage length
+                        data['stage'] = stage_value
+                        break
+            
+            # Industry/Sector
+            industry_patterns = [
+                r'Industry:?\s*([\w\s]+?)(?:\n|$|[A-Z][a-z]+:)',
+                r'Sector:?\s*([\w\s]+?)(?:\n|$|[A-Z][a-z]+:)',
+            ]
+            for pattern in industry_patterns:
+                match = re.search(pattern, all_text)
+                if match:
+                    industry_value = match.group(1).strip()
+                    if len(industry_value) < 100:
+                        if 'industry' in pattern.lower() and not data.get('focus_industry'):
+                            data['focus_industry'] = industry_value
+                        elif 'sector' in pattern.lower() and not data.get('focus_sector'):
+                            data['focus_sector'] = industry_value
+                        break
             
             # Try multiple strategies to find the company/startup name
             name_elem = (
